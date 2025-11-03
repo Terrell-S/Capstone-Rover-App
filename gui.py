@@ -27,7 +27,7 @@ def main(page: ft.Page):
     state: Dict[str, object] = {
         "is_authenticated": False,
         "id_token": None,
-        "api_key": os.getenv("FIREBASE_API_KEY", ""),
+        "api_key": "AIzaSyDpOuS0q81RadjUZp9JNILVcOJJzdynv_Q",
     }
 
     # Small helper for info cards
@@ -222,7 +222,7 @@ def main(page: ft.Page):
                     content=ft.Column([
                         ft.Text("Please sign in to access the Rover Dashboard", size=14),
                         ft.Container(height=12),
-                        api_key_field,
+                        #api_key_field,
                         email,
                         password,
                         ft.Row([
