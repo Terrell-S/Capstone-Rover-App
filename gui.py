@@ -1,4 +1,14 @@
+import os
 import flet as ft
+from typing import Dict
+
+# import auth module with a plain import so running `python gui.py` works
+try:
+    # when package-importing (if the project is installed as a package)
+    from . import auth as firebase_auth  # type: ignore
+except Exception:
+    # when running as a script, use top-level import
+    import auth as firebase_auth
 
 
 def main(page: ft.Page):
@@ -12,6 +22,13 @@ def main(page: ft.Page):
     battery_level = ft.Text("88%", size=20, weight=ft.FontWeight.BOLD)
     location = ft.Text("Lat: 37.421, Lon: -122.084", size=14)
     last_contact = ft.Text("2025-11-03 10:12 UTC", size=12)
+
+    # small state container so closures can mutate
+    state: Dict[str, object] = {
+        "is_authenticated": False,
+        "id_token": None,
+        "api_key": os.getenv("FIREBASE_API_KEY", ""),
+    }
 
     # Small helper for info cards
     def data_card(title: str, widget: ft.Control):
@@ -148,22 +165,103 @@ def main(page: ft.Page):
             ],
         )
 
+    # Login view
+    def view_login():
+        email = ft.TextField(label="Email", width=360)
+        password = ft.TextField(label="Password", password=True, can_reveal_password=True, width=360)
+        api_key_field = ft.TextField(label="Firebase API Key (or set FIREBASE_API_KEY env var)", value=state["api_key"], width=560)
+        message = ft.Text("", color=ft.Colors.RED)
+
+        def set_message(msg: str, color=ft.Colors.RED):
+            message.value = msg
+            message.color = color
+            page.update()
+
+        def on_sign_in(e):
+            key = api_key_field.value.strip()
+            email_val = email.value.strip()
+            pw_val = password.value
+            if not (key and email_val and pw_val):
+                set_message("Please provide API key, email and password.")
+                return
+            try:
+                resp = firebase_auth.sign_in_with_email_and_password(key, email_val, pw_val)
+                # store token in state
+                state["is_authenticated"] = True
+                state["id_token"] = resp.get("idToken")
+                state["api_key"] = key
+                set_message("Signed in successfully.", color=ft.Colors.GREEN)
+                page.go("/")
+            except Exception as exc:
+                set_message(str(exc))
+
+        def on_sign_up(e):
+            key = api_key_field.value.strip()
+            email_val = email.value.strip()
+            pw_val = password.value
+            if not (key and email_val and pw_val):
+                set_message("Please provide API key, email and password.")
+                return
+            try:
+                resp = firebase_auth.sign_up_with_email_and_password(key, email_val, pw_val)
+                state["is_authenticated"] = True
+                state["id_token"] = resp.get("idToken")
+                state["api_key"] = key
+                set_message("Account created and signed in.", color=ft.Colors.GREEN)
+                page.go("/")
+            except Exception as exc:
+                set_message(str(exc))
+
+        return ft.View(
+            "/login",
+            controls=[
+                ft.AppBar(title=ft.Text("Sign in"), center_title=True),
+                ft.Container(
+                    padding=20,
+                    expand=True,
+                    content=ft.Column([
+                        ft.Text("Please sign in to access the Rover Dashboard", size=14),
+                        ft.Container(height=12),
+                        api_key_field,
+                        email,
+                        password,
+                        ft.Row([
+                            ft.ElevatedButton("Sign in", on_click=on_sign_in),
+                            ft.ElevatedButton("Sign up", on_click=on_sign_up),
+                        ], spacing=12),
+                        ft.Container(height=8),
+                        message,
+                    ], spacing=8),
+                ),
+            ],
+        )
+
     # route change handler
     def route_change(route):
         page.views.clear()
+        # if not authenticated, force login view
+        if not state.get("is_authenticated", False) and page.route != "/login":
+            page.views.append(view_login())
+            page.go("/login")
+            page.update()
+            return
+
         if page.route == "/":
             page.views.append(view_main())
         elif page.route == "/current":
             page.views.append(view_current())
         elif page.route == "/logs":
             page.views.append(view_logs())
+        elif page.route == "/login":
+            page.views.append(view_login())
         else:
             page.views.append(view_main())
         page.update()
 
     page.on_route_change = route_change
     # initialize
-    page.go(page.route or "/")
+    # if FIREBASE_API_KEY env var is present, prefill the field; otherwise user will enter it
+    page.go(page.route or ("/login" if not state["is_authenticated"] else "/"))
 
 
 if __name__ == "__main__":
