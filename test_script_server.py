@@ -10,6 +10,11 @@ while not server.shutdown:
         continue
     elif msg == 'port':
         server.send_message(str(server.port))
+    message = msg.split('|')
+    if message[0] == 'update':
+        print('mode is now: ', message[1])
+        print('TOA is now: ', message[2])
+        print('DTS is now: ', message[3])
     print('listening for new message')
 
 print('goodbye')
