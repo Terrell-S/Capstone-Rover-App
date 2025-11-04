@@ -14,26 +14,42 @@ except Exception:
     # when running as a script, use top-level import
     import auth as firebase_auth
 
-def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: list, refresh: int=2):
+def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: list, refresh: int=2, controls: dict=None):
     '''
     python is not pass by reference for some reason
     so need to use list, dict, etc 
 
     periodically requests update from rover
-    thread function so it doesn't bloack GUI
+    thread function so it doesn't block GUI
     '''
     update_rqst = nt.Request('update')
     while True:
         if channel.has_client:
+            print("update_handler: client connected")
             values['connection_status'] = 'Connected'
+            print("update_handler: sending update request")
             channel.send_message(update_rqst)
-            msg = channel.recieve_message() #response type
-            values['mode_status'] = msg.mode
-            values['battery_level'] = msg.battery
-            values['last_contact'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            msg = channel.recieve_message()  # response type
+            print("update_handler: received msg ->", repr(msg))
+            # defensive extraction
             with lock:
+                values['mode_status'] = getattr(msg, 'mode', values.get('mode_status', '~'))
+                values['battery_level'] = getattr(msg, 'battery', values.get('battery_level', '~'))
+                values['last_contact'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                # if actual ft.Text controls were passed in, update them directly
+                if controls:
+                    if 'connection_status' in controls:
+                        controls['connection_status'].value = values.get('connection_status', '')
+                    if 'mode_status' in controls:
+                        controls['mode_status'].value = values.get('mode_status', '')
+                    if 'battery_level' in controls:
+                        controls['battery_level'].value = values.get('battery_level', '')
+                    if 'last_contact' in controls:
+                        controls['last_contact'].value = values.get('last_contact', '')
                 page.update()
-            
+                if controls:
+                    print("update_handler: controls now ->",
+                          {k: controls[k].value for k in controls})
         time.sleep(refresh)
 
 def main(page: ft.Page):
@@ -52,13 +68,22 @@ def main(page: ft.Page):
         "last_contact": "check log",
     }
     update_channel = nt.WiFiChannel(5000)
-    update_thread = threading.Thread(target=update_handler, args=[update_channel, page, updates, []], daemon=True)
-    update_thread.start() 
     # Sample state for the current rover page
     connection_status = ft.Text(updates['connection_status'], size=20, weight=ft.FontWeight.BOLD)
     mode_status = ft.Text(updates['mode_status'], size=20, weight=ft.FontWeight.BOLD)
     battery_level = ft.Text(updates['battery_level'], size=20, weight=ft.FontWeight.BOLD)
     last_contact = ft.Text(updates['last_contact'], size=12)
+
+    # start the update handler now that controls exist; pass the control objects so
+    # the handler can update their .value directly and call page.update()
+    controls = {
+        'connection_status': connection_status,
+        'mode_status': mode_status,
+        'battery_level': battery_level,
+        'last_contact': last_contact,
+    }
+    # pass controls as a positional argument (page.run_thread wrapper doesn't accept kwargs)
+    page.run_thread(update_handler, update_channel, page, updates, [], 2, controls)
 
     # Sample incidents for the logs page
     sample_incidents = [
