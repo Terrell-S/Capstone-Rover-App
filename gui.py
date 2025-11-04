@@ -2,9 +2,10 @@ import os
 import flet as ft
 import networking as nt
 import time 
+import threading
 from datetime import datetime
 from typing import Dict
-
+lock = threading.Lock()
 # import auth module with a plain import so running `python gui.py` works
 try:
     # when package-importing (if the project is installed as a package)
@@ -13,23 +14,26 @@ except Exception:
     # when running as a script, use top-level import
     import auth as firebase_auth
 
-def update_handler(channel: nt.WiFiChannel, values: dict, log: list, refresh: int=2):
+def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: list, refresh: int=2):
     '''
     python is not pass by reference for some reason
     so need to use list, dict, etc 
-    
+
     periodically requests update from rover
     thread function so it doesn't bloack GUI
     '''
     update_rqst = nt.Request('update')
     while True:
         if channel.has_client:
+            values['connection_status'] = 'Connected'
             channel.send_message(update_rqst)
             msg = channel.recieve_message() #response type
-            values['connection_status'] = 'Connected'
             values['mode_status'] = msg.mode
             values['battery_level'] = msg.battery
             values['last_contact'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            with lock:
+                page.update()
+            
         time.sleep(refresh)
 
 def main(page: ft.Page):
@@ -47,11 +51,13 @@ def main(page: ft.Page):
         "battery_level": "~",
         "last_contact": "check log",
     }
-    update_channel = nt.WiFiChannel(9000)
+    update_channel = nt.WiFiChannel(5000)
+    update_thread = threading.Thread(target=update_handler, args=[update_channel, page, updates, []], daemon=True)
+    update_thread.start() 
     # Sample state for the current rover page
     connection_status = ft.Text(updates['connection_status'], size=20, weight=ft.FontWeight.BOLD)
     mode_status = ft.Text(updates['mode_status'], size=20, weight=ft.FontWeight.BOLD)
-    battery_level = ft.Text(updates['bettery_level'], size=20, weight=ft.FontWeight.BOLD)
+    battery_level = ft.Text(updates['battery_level'], size=20, weight=ft.FontWeight.BOLD)
     last_contact = ft.Text(updates['last_contact'], size=12)
 
     # Sample incidents for the logs page

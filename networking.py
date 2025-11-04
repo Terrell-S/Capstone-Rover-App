@@ -69,7 +69,7 @@ class WiFiChannel:
 
         # $ sudo iptables -I INPUT -s ESP.IP.GOES.HERE -p tcp --dport 15000 -j ACCEPT 
         self.sock.bind(('0.0.0.0', port))
-        self.sock.listen(0)
+        self.sock.listen(1)
         print('listening for connection on port:', port)
         connector = threading.Thread(target=self.__wait_for_connection_thread, daemon=True, args=[self.sock])
         connector.start()
@@ -78,9 +78,9 @@ class WiFiChannel:
         '''
         Establish a connection with a client, and die
         '''
-        self._client, self._client_address = soc.accept()
+        self.client, self.client_addr = soc.accept()
         print('connection accepted from:', self.client_addr)
-        self._have_client = True
+        self.has_client = True
 
 
     def destroy(self):

@@ -6,12 +6,12 @@ sock.connect(('127.0.0.1',5000 ))
 
 msg = ''
 while msg != 'close':
-    msg = input("enter message: ")
+    print('waiting for update request...')
+    in_msg = sock.recv(128).decode()
+    print('received message:', in_msg)
+    msg = input("enter update message: ")
     sock.send(msg.encode())
-    if msg == 'port':
-        port_bytes = sock.recv(128)
-        port = port_bytes.decode()
-        print('server port is:', port)
+    print('message sent')
 
 print('goodbye')
 
