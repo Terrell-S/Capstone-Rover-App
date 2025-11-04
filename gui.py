@@ -1,5 +1,8 @@
 import os
 import flet as ft
+import networking as nt
+import time 
+from datetime import datetime
 from typing import Dict
 
 # import auth module with a plain import so running `python gui.py` works
@@ -10,6 +13,24 @@ except Exception:
     # when running as a script, use top-level import
     import auth as firebase_auth
 
+def update_handler(channel: nt.WiFiChannel, values: dict, log: list, refresh: int=2):
+    '''
+    python is not pass by reference for some reason
+    so need to use list, dict, etc 
+    
+    periodically requests update from rover
+    thread function so it doesn't bloack GUI
+    '''
+    update_rqst = nt.Request('update')
+    while True:
+        if channel.has_client:
+            channel.send_message(update_rqst)
+            msg = channel.recieve_message() #response type
+            values['connection_status'] = 'Connected'
+            values['mode_status'] = msg.mode
+            values['battery_level'] = msg.battery
+            values['last_contact'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        time.sleep(refresh)
 
 def main(page: ft.Page):
     page.title = "Rover Dashboard"
@@ -17,18 +38,57 @@ def main(page: ft.Page):
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.vertical_alignment = ft.MainAxisAlignment.START
 
+    '''
+    Data is changed here by threads, and is only read by gui containers
+    '''
+    updates = {
+        "connection_status": "No connection",
+        "mode_status": "~",
+        "battery_level": "~",
+        "last_contact": "check log",
+    }
+    update_channel = nt.WiFiChannel(9000)
     # Sample state for the current rover page
-    rover_status = ft.Text("OK", size=20, weight=ft.FontWeight.BOLD)
-    battery_level = ft.Text("88%", size=20, weight=ft.FontWeight.BOLD)
-    location = ft.Text("Lat: 37.421, Lon: -122.084", size=14)
-    last_contact = ft.Text("2025-11-03 10:12 UTC", size=12)
+    connection_status = ft.Text(updates['connection_status'], size=20, weight=ft.FontWeight.BOLD)
+    mode_status = ft.Text(updates['mode_status'], size=20, weight=ft.FontWeight.BOLD)
+    battery_level = ft.Text(updates['bettery_level'], size=20, weight=ft.FontWeight.BOLD)
+    last_contact = ft.Text(updates['last_contact'], size=12)
+
+    # Sample incidents for the logs page
+    sample_incidents = [
+        {"time": "2025-10-31 09:12", "summary": "Leak detected", "severity": "medium"},
+        {"time": "2025-10-29 21:03", "summary": "Manual Search Engaged", "severity": "low"},
+        {"time": "2025-10-20 14:22", "summary": "Temperature spike", "severity": "high"},
+    ]
 
     # small state container so closures can mutate
     state: Dict[str, object] = {
         "is_authenticated": False,
         "id_token": None,
         "api_key": "AIzaSyDpOuS0q81RadjUZp9JNILVcOJJzdynv_Q",
+        #"api_key": os.getenv("FIREBASE_API_KEY", ""),
+        "user_email": None,
     }
+
+    # logout helper (clears in-memory auth state)
+    def on_logout(e=None):
+        state["is_authenticated"] = False
+        state["id_token"] = None
+        state["user_email"] = None
+        # send user back to login
+        page.go("/login")
+        page.update()
+
+    # AppBar factory that shows the signed-in user's email on the right
+    def app_bar(title_text: str, leading=None):
+        actions = []
+        if state.get("is_authenticated"):
+            email = state.get("user_email") or ""
+            # show email and a small logout button
+            actions.append(ft.Text(email, size=12))
+            actions.append(ft.Container(width=12))
+            actions.append(ft.TextButton("Logout", on_click=on_logout))
+        return ft.AppBar(title=ft.Text(title_text), center_title=True, leading=leading, actions=actions)
 
     # Small helper for info cards
     def data_card(title: str, widget: ft.Control):
@@ -45,19 +105,13 @@ def main(page: ft.Page):
             )
         )
 
-    # Sample incidents for the logs page
-    sample_incidents = [
-        {"time": "2025-10-31 09:12", "summary": "Leak detected", "severity": "medium"},
-        {"time": "2025-10-29 21:03", "summary": "Manual Search Engaged", "severity": "low"},
-        {"time": "2025-10-20 14:22", "summary": "Temperature spike", "severity": "high"},
-    ]
 
     # Views
     def view_main():
         return ft.View(
             "/",
             controls=[
-                ft.AppBar(title=ft.Text("Rover Dashboard"), center_title=True),
+                app_bar("Rover Dashboard"),
                 ft.Container(height=20),
                 ft.Row(
                     [
@@ -65,7 +119,7 @@ def main(page: ft.Page):
                             content=ft.Column([
                                 ft.Text("Current Rover Info", size=16, weight=ft.FontWeight.BOLD),
                                 ft.Container(height=8),
-                                ft.Text("View live status and telemetry", size=12),
+                                ft.Text("View live status and robot control", size=12),
                             ], alignment=ft.MainAxisAlignment.CENTER),
                             margin=10,
                             padding=10,
@@ -103,23 +157,18 @@ def main(page: ft.Page):
         return ft.View(
             "/current",
             controls=[
-                ft.AppBar(
-                    title=ft.Text("Current Rover Info"),
-                    center_title=True,
-                    # Avoid using ft.icons for maximum compatibility across flet versions
-                    leading=ft.TextButton("Back", on_click=lambda e: page.go("/")),
-                ),
+                app_bar("Current Rover Info", leading=ft.TextButton("Back", on_click=lambda e: page.go("/"))),
                 ft.Container(
                     padding=20,
                     expand=True,
                     content=ft.Column([
-                        data_card("Connection Status", rover_status),
+                        data_card("Connection Status", connection_status),
+                        data_card("Current Mode", mode_status),
                         ft.Row([
                             data_card("Battery", battery_level),
                             ft.Container(width=12),
                             data_card("Last Contact", last_contact),
                         ], alignment=ft.MainAxisAlignment.START),
-                        data_card("Location", location),
                         ft.Container(height=12),
                         ft.ElevatedButton("Refresh", on_click=lambda e: page.update()),
                     ], spacing=12),
@@ -147,12 +196,7 @@ def main(page: ft.Page):
         return ft.View(
             "/logs",
             controls=[
-                ft.AppBar(
-                    title=ft.Text("Logged Incidents"),
-                    center_title=True,
-                    # Use a text button instead of icon to avoid AttributeError on some flet installs
-                    leading=ft.TextButton("Back", on_click=lambda e: page.go("/")),
-                ),
+                app_bar("Logged Incidents", leading=ft.TextButton("Back", on_click=lambda e: page.go("/"))),
                 ft.Container(
                     padding=20,
                     expand=True,
@@ -189,6 +233,8 @@ def main(page: ft.Page):
                 # store token in state
                 state["is_authenticated"] = True
                 state["id_token"] = resp.get("idToken")
+                # store the signed-in user's email for display
+                state["user_email"] = resp.get("email", email_val)
                 state["api_key"] = key
                 set_message("Signed in successfully.", color=ft.Colors.GREEN)
                 page.go("/")
@@ -206,6 +252,8 @@ def main(page: ft.Page):
                 resp = firebase_auth.sign_up_with_email_and_password(key, email_val, pw_val)
                 state["is_authenticated"] = True
                 state["id_token"] = resp.get("idToken")
+                # store the created user's email for display
+                state["user_email"] = resp.get("email", email_val)
                 state["api_key"] = key
                 set_message("Account created and signed in.", color=ft.Colors.GREEN)
                 page.go("/")
