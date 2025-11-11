@@ -26,6 +26,9 @@ class Response:
         self.clientAddr = clientAddr
 
 class Request: 
+    '''
+    of form: request_type|mode_requested
+    '''
     def __init__(self, request_type: str, mode_requsted: str = ''):
         '''
         request_type: update or contol
