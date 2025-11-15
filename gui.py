@@ -14,7 +14,7 @@ except Exception:
     # when running as a script, use top-level import
     import auth as firebase_auth
 
-def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: list, refresh: int=2, controls: dict=None):
+def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: ft.Column, refresh: int=2, controls: dict=None):
     '''
     python is not pass by reference for some reason
     so need to use list, dict, etc 
@@ -46,6 +46,36 @@ def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: li
                         controls['battery_level'].value = values.get('battery_level', '')
                     if 'last_contact' in controls:
                         controls['last_contact'].value = values.get('last_contact', '')
+                if msg.type == 'alert':
+                    #change mode status
+                    controls['mode_status'].value = values.get('mode_status', '')
+
+                    #add incident to log
+                    new_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    indicent_type = 'Leak Detected'
+                    summary = "Rover has detected an alert condition."
+                    new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
+                        ft.Text(new_time, size=12, color=ft.Colors.GREY_600),
+                        ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
+                    ])))
+                    log.controls.insert(0, new_card)
+                elif msg.type == 'log':
+                    #change mode status
+                    controls['mode_status'].value = values.get('mode_status', '')
+
+                    #add incident to log
+                    new_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    indicent_type = 'Leak Report'
+                    summary = f"TTD: {msg.data.get('TTD', 'N/A')}s, DTS: {msg.data.get('DTS', 'N/A')}m"
+                    new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
+                        ft.Text(new_time, size=12, color=ft.Colors.GREY_600),
+                        ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
+                    ])))
+                    log.controls.insert(0, new_card)
+                
+
                 page.update()
                 if controls:
                     print("update_handler: controls now ->",
@@ -82,15 +112,14 @@ def main(page: ft.Page):
         'battery_level': battery_level,
         'last_contact': last_contact,
     }
-    # pass controls as a positional argument (page.run_thread wrapper doesn't accept kwargs)
-    page.run_thread(update_handler, update_channel, page, updates, [], 2, controls)
 
-    # Sample incidents for the logs page
-    sample_incidents = [
-        {"time": "2025-10-31 09:12", "summary": "Leak detected", "severity": "medium"},
-        {"time": "2025-10-29 21:03", "summary": "Manual Search Engaged", "severity": "low"},
-        {"time": "2025-10-20 14:22", "summary": "Temperature spike", "severity": "high"},
-    ]
+    #flutter object to have changable list
+    #holds card object for each incident
+    incident_list_column = ft.Column([], spacing=8)
+
+    #flutter built in thread handler
+    page.run_thread(update_handler, update_channel, page, updates, incident_list_column, 2, controls)
+
 
     # small state container so closures can mutate
     state: Dict[str, object] = {
@@ -103,6 +132,16 @@ def main(page: ft.Page):
 
     # logout helper (clears in-memory auth state)
     def on_logout(e=None):
+        new_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+        indicent_type = 'User Logout'
+        summary = f"User {state['user_email']} signed out."
+        new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
+                ft.Text(new_time, size=12, color=ft.Colors.GREY_600),
+                ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
+                ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
+            ])))
+        incident_list_column.controls.insert(0, new_card)
+ 
         state["is_authenticated"] = False
         state["id_token"] = None
         state["user_email"] = None
@@ -208,22 +247,6 @@ def main(page: ft.Page):
         )
 
     def view_logs():
-        # build a list of incident cards
-        incident_cards = []
-        for inc in sample_incidents:
-            incident_cards.append(
-                ft.Card(
-                    content=ft.Container(
-                        padding=12,
-                        content=ft.Column([
-                            ft.Text(inc["time"], size=12, color=ft.Colors.GREY_600),
-                            ft.Text(inc["summary"], size=14, weight=ft.FontWeight.BOLD),
-                            ft.Text(f"Severity: {inc['severity']}", size=12),
-                        ])
-                    )
-                )
-            )
-
         return ft.View(
             "/logs",
             controls=[
@@ -234,7 +257,7 @@ def main(page: ft.Page):
                     content=ft.Column([
                         ft.Text("Incident History", size=18, weight=ft.FontWeight.BOLD),
                         ft.Container(height=12),
-                        ft.Column(incident_cards, spacing=8),
+                        incident_list_column,
                     ]),
                 ),
             ],
@@ -268,6 +291,18 @@ def main(page: ft.Page):
                 state["user_email"] = resp.get("email", email_val)
                 state["api_key"] = key
                 set_message("Signed in successfully.", color=ft.Colors.GREEN)
+
+                #current login tracking in log
+                new_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+                indicent_type = 'User Login'
+                summary = f"User {state['user_email']} signed in."
+                new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
+                        ft.Text(new_time, size=12, color=ft.Colors.GREY_600),
+                        ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
+                    ])))
+                incident_list_column.controls.insert(0, new_card)
+                page.update()
                 page.go("/")
             except Exception as exc:
                 set_message(str(exc))
