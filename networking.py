@@ -7,7 +7,8 @@ from queue import Queue
 
 class Response:
     '''
-    
+    this class takes in a message received from a client
+    and parses it into veriables with | as a delimiter
     '''
     def __init__(self, msg: str, clientAddr):
         message = msg.split('|')
@@ -21,7 +22,7 @@ class Response:
         elif message[0] == 'log':
             self.type = 'log'
             self.mode = 'transmit'
-            self.data = {'TTD': message[1], 'DTS': message[2], 'Name': message[3]}
+            self.data = {'TTD': message[1], 'DTS': message[2], 'motor_data': message[3]}
             
         self.clientAddr = clientAddr
 

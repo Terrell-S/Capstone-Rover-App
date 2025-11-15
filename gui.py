@@ -1,9 +1,8 @@
-import os, time, threading
+import os, time, threading, mapping, json
 import flet as ft
 import networking as nt
 from datetime import datetime
 from typing import Dict
-lock = threading.Lock()
 try:
     # when package-importing (if the project is installed as a package)
     from . import auth as firebase_auth  # type: ignore
@@ -11,6 +10,7 @@ except Exception:
     # when running as a script, use top-level import
     import auth as firebase_auth
 
+lock = threading.Lock()
 def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: ft.Column, refresh: int=2, controls: dict=None):
     '''
     python is not pass by reference for some reason
@@ -48,11 +48,11 @@ def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: ft
                     controls['mode_status'].value = values.get('mode_status', '')
 
                     #add incident to log
-                    new_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    time_log = datetime.now().strftime("%Y-%m-%d %H:%M")
                     indicent_type = 'Leak Detected'
                     summary = "Rover has detected an alert condition."
                     new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
-                        ft.Text(new_time, size=12, color=ft.Colors.GREY_600),
+                        ft.Text(time_log, size=12, color=ft.Colors.GREY_600),
                         ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
                         ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
                     ])))
@@ -62,13 +62,23 @@ def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: ft
                     controls['mode_status'].value = values.get('mode_status', '')
 
                     #add incident to log
-                    new_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    #prepare text
+                    now = datetime.now()
+                    time_log = now.strftime("%Y-%m-%d %H:%M")
+                    time_safe = now.strftime("%Y-%m-%d-%H_%M")
                     indicent_type = 'Leak Report'
                     summary = f"TTD: {msg.data.get('TTD', 'N/A')}s, DTS: {msg.data.get('DTS', 'N/A')}m"
+                    
+                    #prepare map file
+                    motor_data = json.loads(msg.data.get('motor_data','[]'))
+                    map_filename = f"leak_map_{time_safe}.png" #change later to be in log folder
+                    mapping.make_map(motor_data, map_filename)
+                    
                     new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
-                        ft.Text(new_time, size=12, color=ft.Colors.GREY_600),
+                        ft.Text(time_log, size=12, color=ft.Colors.GREY_600),
                         ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
                         ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
+                        ft.Image(src=f"leak_map_{time_safe}.png", width=300),
                     ])))
                     log.controls.insert(0, new_card)
                 
@@ -128,11 +138,11 @@ def main(page: ft.Page):
 
     # logout helper (clears in-memory auth state)
     def on_logout(e=None):
-        new_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+        time_log = datetime.now().strftime("%Y-%m-%d %H:%M")
         indicent_type = 'User Logout'
         summary = f"User {state['user_email']} signed out."
         new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
-                ft.Text(new_time, size=12, color=ft.Colors.GREY_600),
+                ft.Text(time_log, size=12, color=ft.Colors.GREY_600),
                 ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
                 ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
             ])))
@@ -289,11 +299,11 @@ def main(page: ft.Page):
                 set_message("Signed in successfully.", color=ft.Colors.GREEN)
 
                 #current login tracking in log
-                new_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+                time_log = datetime.now().strftime("%Y-%m-%d %H:%M")
                 indicent_type = 'User Login'
                 summary = f"User {state['user_email']} signed in."
                 new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
-                        ft.Text(new_time, size=12, color=ft.Colors.GREY_600),
+                        ft.Text(time_log, size=12, color=ft.Colors.GREY_600),
                         ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
                         ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
                     ])))
