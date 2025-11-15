@@ -1,6 +1,11 @@
 import math
 import matplotlib.pyplot as plt
-
+'''
+Save the figure to a file (recommended for headless servers / embedding in other UIs)
+Replace plt.show() with saving the image:
+plt.savefig("map.png", dpi=150, bbox_inches="tight")
+Then display the saved file in your app (for example, Flet: ft.Image(src="map.png")). This is simple and reliable.
+'''
 # Example motor/encoder data (left_wheel, right_wheel)
 # Each pair represents movement per time step (in rotations)
 motor_data = [

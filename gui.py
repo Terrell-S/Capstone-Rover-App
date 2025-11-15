@@ -1,12 +1,9 @@
-import os
+import os, time, threading
 import flet as ft
 import networking as nt
-import time 
-import threading
 from datetime import datetime
 from typing import Dict
 lock = threading.Lock()
-# import auth module with a plain import so running `python gui.py` works
 try:
     # when package-importing (if the project is installed as a package)
     from . import auth as firebase_auth  # type: ignore
@@ -98,14 +95,13 @@ def main(page: ft.Page):
         "last_contact": "check log",
     }
     update_channel = nt.WiFiChannel(5000)
-    # Sample state for the current rover page
+    
+    # control object initialization
     connection_status = ft.Text(updates['connection_status'], size=20, weight=ft.FontWeight.BOLD)
     mode_status = ft.Text(updates['mode_status'], size=20, weight=ft.FontWeight.BOLD)
     battery_level = ft.Text(updates['battery_level'], size=20, weight=ft.FontWeight.BOLD)
     last_contact = ft.Text(updates['last_contact'], size=12)
 
-    # start the update handler now that controls exist; pass the control objects so
-    # the handler can update their .value directly and call page.update()
     controls = {
         'connection_status': connection_status,
         'mode_status': mode_status,
