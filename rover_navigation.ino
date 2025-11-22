@@ -11,19 +11,17 @@ const int pwmRes     = 8;     // duty 0..255
 
 volatile long EncoderValue = 0;
 
-const float COUNTS_PER_REV = 1200.0;
-const float WHEEL_CIRCUMFERENCE_M = 0.2513;
 
 
 
 void setup() {
-  pinMode(ForwardPin, OUTPUT);
-  pinMode(BackwardPin, OUTPUT);
+  pinMode(DirR, OUTPUT);
+  pinMode(DirL, OUTPUT);
 
   pinMode(EncoderPinA, INPUT_PULLUP);
   pinMode(EncoderPinB, INPUT_PULLUP);
 
-  ledcAttachChannel(EnablePin, pwmFreq, pwmRes,pwmChannel);
+  ledcAttachChannel(EnablePinR, pwmFreq, pwmRes,pwmChannel);
   //ledcSetup(pwmChannel, pwmFreq, pwmRes); //outdated functions
   //ledcAttachPin(EnablePin, pwmChannel);
 
@@ -43,7 +41,7 @@ int thing = 1; // delay turns to every 2 seconds
 void loop() {
   // read encoder safely and print distance
   float speedPct = 15.0f;
-  setMotorPercent(speedPct);     // e.g., +60% forward (use negative for reverse)
+  setMotorPercent(EnablePinR, DirR, speedPct);     // e.g., +60% forward (use negative for reverse)
   noInterrupts();
   long count = EncoderValue;
   interrupts();

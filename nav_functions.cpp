@@ -33,9 +33,11 @@ void turn(int angle, float vel, float speedPct){
   Serial.println(t);
 
   //set motors to turning speeds for duration then return them to normal
-  setMotorPercent(Vr*velToPct); //just one motor for now
+  setMotorPercent(EnablePinR, DirR, Vr*velToPct); //just one motor for now
+  //setMotorPercent(EnablePinR, DirR, Vl*velToPct);
   delay((int)(t*1000)); //delay only takes ms in int
-  setMotorPercent(speedPct);
+  setMotorPercent(EnablePinR, DirR, speedPct); //just one motor for now
+  //setMotorPercent(EnablePinR, DirR, speedPct);
 
   Serial.println("turn is complete");
 }
@@ -45,26 +47,26 @@ float metersFromCounts(long counts) {
 }
 
 // --- NEW: tiny helper for motor control (-100..+100 %) ---
-void setMotorPercent(float speedPct) {
+void setMotorPercent(int pwmPin, int dir, float speedPct) {
   // clamp
   if (speedPct >  100.0f) speedPct =  100.0f;
   if (speedPct < -100.0f) speedPct = -100.0f;
 
   // direction lines
   if (speedPct > 0) {
-    digitalWrite(ForwardPin, HIGH);
-    digitalWrite(BackwardPin, LOW);
+    //digitalWrite(ForwardPin, HIGH);
+    digitalWrite(dir, LOW);
   } else if (speedPct < 0) {
-    digitalWrite(ForwardPin, LOW);
-    digitalWrite(BackwardPin, HIGH);
+    //digitalWrite(ForwardPin, LOW);
+    digitalWrite(dir, HIGH);
     speedPct = -speedPct;  // use magnitude for duty
   } else {
     // coast
-    digitalWrite(ForwardPin, LOW);
-    digitalWrite(BackwardPin, LOW);
+    //digitalWrite(ForwardPin, LOW);
+    digitalWrite(dir, LOW);
   }
 
   // map 0..100% -> 0..255 (8-bit)
   uint8_t duty = (uint8_t)(speedPct * 2.55f + 0.5f);
-  ledcWrite(EnablePin, duty);
+  ledcWrite(pwmPin, duty);
 }
