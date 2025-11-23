@@ -20,34 +20,63 @@ def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: ft
     thread function so it doesn't block GUI
     '''
     update_rqst = nt.Request('update')
+    backoff = 1.0
     while True:
-        if channel.has_client:
-            print("update_handler: client connected")
-            values['connection_status'] = 'Connected'
-            print("update_handler: sending update request")
-            channel.send_message(update_rqst)
-            msg = channel.recieve_message()  # response type
-            print("update_handler: received msg ->", repr(msg))
-            # defensive extraction
+        try:
+            if not channel.has_client:
+                # No client connected — show listening / disconnected state
+                with lock:
+                    values['connection_status'] = 'Listening'
+                    values['mode_status'] = values.get('mode_status', '~')
+                    values['battery_level'] = values.get('battery_level', '~')
+                    values['last_contact'] = values.get('last_contact', 'check log')
+                    if controls:
+                        controls['connection_status'].value = values['connection_status']
+                        controls['mode_status'].value = values['mode_status']
+                        controls['battery_level'].value = values['battery_level']
+                        controls['last_contact'].value = values['last_contact']
+                page.update()
+                # lightweight backoff before checking again
+                time.sleep(backoff)
+                continue
+
+            # We have a client — attempt to exchange update messages
+            with lock:
+                values['connection_status'] = 'Connected'
+                if controls and 'connection_status' in controls:
+                    controls['connection_status'].value = 'Connected'
+                page.update()
+
+            try:
+                channel.send_message(update_rqst)
+                msg = channel.recieve_message()
+            except Exception as net_exc:
+                # networking layer signaled a problem (e.g. client disconnected)
+                with lock:
+                    values['connection_status'] = 'No connection'
+                    if controls and 'connection_status' in controls:
+                        controls['connection_status'].value = values['connection_status']
+                page.update()
+                # small sleep to allow `WiFiChannel` accept loop to recover
+                time.sleep(1.0)
+                continue
+
+            # Successful receive -> update UI state
             with lock:
                 values['mode_status'] = getattr(msg, 'mode', values.get('mode_status', '~'))
                 values['battery_level'] = getattr(msg, 'battery', values.get('battery_level', '~'))
                 values['last_contact'] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                # if actual ft.Text controls were passed in, update them directly
-                if controls:
-                    if 'connection_status' in controls:
-                        controls['connection_status'].value = values.get('connection_status', '')
-                    if 'mode_status' in controls:
-                        controls['mode_status'].value = values.get('mode_status', '')
-                    if 'battery_level' in controls:
-                        controls['battery_level'].value = values.get('battery_level', '')
-                    if 'last_contact' in controls:
-                        controls['last_contact'].value = values.get('last_contact', '')
-                if msg.type == 'alert':
-                    #change mode status
-                    controls['mode_status'].value = values.get('mode_status', '')
 
-                    #add incident to log
+                if controls:
+                    if 'mode_status' in controls:
+                        controls['mode_status'].value = values['mode_status']
+                    if 'battery_level' in controls:
+                        controls['battery_level'].value = values['battery_level']
+                    if 'last_contact' in controls:
+                        controls['last_contact'].value = values['last_contact']
+
+                # handle message types as before (alert/log)
+                if getattr(msg, 'type', None) == 'alert':
                     time_log = datetime.now().strftime("%Y-%m-%d %H:%M")
                     indicent_type = 'Leak Detected'
                     summary = "Rover has detected an alert condition."
@@ -57,37 +86,36 @@ def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: ft
                         ft.Text(summary, size=16),
                     ])))
                     log.controls.insert(0, new_card)
-                elif msg.type == 'log':
-                    #change mode status
-                    controls['mode_status'].value = values.get('mode_status', '')
 
-                    #add incident to log
-                    #prepare text
+                elif getattr(msg, 'type', None) == 'log':
                     now = datetime.now()
                     time_log = now.strftime("%Y-%m-%d %H:%M")
                     time_safe = now.strftime("%Y-%m-%d-%H_%M")
                     indicent_type = 'Leak Report'
                     summary = f"TTD: {msg.data.get('TTD', 'N/A')}s, DTS: {msg.data.get('DTS', 'N/A')}m"
-                    
-                    #prepare map file
                     motor_data = json.loads(msg.data.get('motor_data','[]'))
                     map_filename = f"leak_map_{time_safe}.png" #change later to be in log folder
                     mapping.make_map(motor_data, map_filename)
-                    
                     new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
                         ft.Text(time_log, size=16, color=ft.Colors.GREY_600),
                         ft.Text(indicent_type, size=22, weight=ft.FontWeight.BOLD),
                         ft.Text(summary, size=16),
-                        ft.Image(src=f"leak_map_{time_safe}.png", width=500),
+                        ft.Image(src=map_filename, width=500),
                     ])))
                     log.controls.insert(0, new_card)
-                
 
-                page.update()
-                if controls:
-                    print("update_handler: controls now ->",
-                          {k: controls[k].value for k in controls})
-        time.sleep(refresh)
+            # normal refresh interval
+            time.sleep(refresh)
+
+        except Exception as exc:
+            # Catch-all to avoid thread dying; surface status and continue
+            with lock:
+                values['connection_status'] = 'Error'
+                if controls and 'connection_status' in controls:
+                    controls['connection_status'].value = 'Error'
+            print("update_handler unexpected error:", repr(exc))
+            page.update()
+            time.sleep(1.0)
 
 def main(page: ft.Page):
     page.title = "Rover Dashboard"
