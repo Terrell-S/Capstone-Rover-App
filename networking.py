@@ -1,6 +1,7 @@
 import socket
 import threading
 import time 
+import select
 from queue import Queue 
 
 
@@ -80,11 +81,46 @@ class WiFiChannel:
 
     def __wait_for_connection_thread(self, soc: socket.socket) -> None:
         '''
-        Establish a connection with a client, and die
+        Continuously accept connections. After a client disconnects the loop
+        continues so the server keeps listening for new connections.
         '''
-        self.client, self.client_addr = soc.accept()
-        print('connection accepted from:', self.client_addr)
-        self.has_client = True
+        while not self.shutdown:
+            try:
+                self.client, self.client_addr = soc.accept()
+            except Exception:
+                # if socket was closed or interrupted, exit
+                break
+            print('connection accepted from:', self.client_addr)
+            self.has_client = True
+
+            # monitor the client for disconnection without consuming data
+            try:
+                while not self.shutdown and self.client is not None:
+                    # use select to check if socket is readable
+                    r, _, _ = select.select([self.client], [], [], 1.0)
+                    if r:
+                        try:
+                            # peek to see if connection closed (0 bytes means closed)
+                            data = self.client.recv(1, socket.MSG_PEEK)
+                            if not data:
+                                break
+                        except BlockingIOError:
+                            # no data available yet
+                            continue
+                        except Exception:
+                            # any error -> treat as disconnect
+                            break
+                    # otherwise timeout — loop again to check shutdown
+            finally:
+                print('client disconnected:', self.client_addr)
+                try:
+                    if self.client is not None:
+                        self.client.close()
+                except Exception:
+                    pass
+                self.client = None
+                self.client_addr = None
+                self.has_client = False
 
 
     def destroy(self):
@@ -92,19 +128,50 @@ class WiFiChannel:
         self.shutdown = True
         if self.client is not None:
             self.client.close()
+        try:
+            self.sock.close()
+        except Exception:
+            pass
 
     def recieve_message(self):
         '''
         gets message in form: type|
         returns response type
         '''
-        message_bytes = self.client.recv(128)
-        message = self.__decode(message_bytes)
-        return Response(message, self.client_addr)
+        if not self.has_client or self.client is None:
+            raise RuntimeError("No client connected")
+        try:
+            message_bytes = self.client.recv(128)
+            if not message_bytes:
+                # remote closed
+                self.has_client = False
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
+                self.client = None
+                raise RuntimeError("Client disconnected")
+            message = self.__decode(message_bytes)
+            return Response(message, self.client_addr)
+        except Exception:
+            # propagate as runtime error so callers can handle reconnect
+            raise
 
     def send_message(self, rqst: Request):
         message = rqst.request_type + '|' + rqst.mode_requsted
-        self.client.send(self.__encode(message))
+        if not self.has_client or self.client is None:
+            raise RuntimeError("No client connected")
+        try:
+            self.client.send(self.__encode(message))
+        except Exception:
+            # mark client as gone so accept loop can continue
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = None
+            self.has_client = False
+            raise
 
     def __encode(self, message):
         return message.encode()
