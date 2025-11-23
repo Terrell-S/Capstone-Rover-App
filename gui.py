@@ -52,9 +52,9 @@ def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: ft
                     indicent_type = 'Leak Detected'
                     summary = "Rover has detected an alert condition."
                     new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
-                        ft.Text(time_log, size=12, color=ft.Colors.GREY_600),
-                        ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
-                        ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text(time_log, size=16, color=ft.Colors.GREY_600),
+                        ft.Text(indicent_type, size=22, weight=ft.FontWeight.BOLD),
+                        ft.Text(summary, size=16),
                     ])))
                     log.controls.insert(0, new_card)
                 elif msg.type == 'log':
@@ -75,10 +75,10 @@ def update_handler(channel: nt.WiFiChannel, page: ft.Page, values: dict, log: ft
                     mapping.make_map(motor_data, map_filename)
                     
                     new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
-                        ft.Text(time_log, size=12, color=ft.Colors.GREY_600),
-                        ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
-                        ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
-                        ft.Image(src=f"leak_map_{time_safe}.png", width=300),
+                        ft.Text(time_log, size=16, color=ft.Colors.GREY_600),
+                        ft.Text(indicent_type, size=22, weight=ft.FontWeight.BOLD),
+                        ft.Text(summary, size=16),
+                        ft.Image(src=f"leak_map_{time_safe}.png", width=500),
                     ])))
                     log.controls.insert(0, new_card)
                 
@@ -142,9 +142,9 @@ def main(page: ft.Page):
         indicent_type = 'User Logout'
         summary = f"User {state['user_email']} signed out."
         new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
-                ft.Text(time_log, size=12, color=ft.Colors.GREY_600),
-                ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
-                ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
+                ft.Text(time_log, size=16, color=ft.Colors.GREY_600),
+                ft.Text(indicent_type, size=22, weight=ft.FontWeight.BOLD),
+                ft.Text(summary, size=16),
             ])))
         incident_list_column.controls.insert(0, new_card)
  
@@ -193,32 +193,32 @@ def main(page: ft.Page):
                     [
                         ft.Container(
                             content=ft.Column([
-                                ft.Text("Current Rover Info", size=16, weight=ft.FontWeight.BOLD),
+                                ft.Text("Current Rover Info", size=24, weight=ft.FontWeight.BOLD),
                                 ft.Container(height=8),
-                                ft.Text("View live status and robot control", size=12),
-                            ], alignment=ft.MainAxisAlignment.CENTER),
+                                ft.Text("View live status and robot control", size=20),
+                            ], alignment=ft.MainAxisAlignment.CENTER,horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                             margin=10,
                             padding=10,
                             alignment=ft.alignment.center,
                             bgcolor=ft.Colors.BLUE_50,
-                            width=240,
-                            height=140,
+                            width=440,
+                            height=340,
                             border_radius=10,
                             ink=True,
                             on_click=lambda e: page.go("/current"),
                         ),
                         ft.Container(
                             content=ft.Column([
-                                ft.Text("Past Logged Incidents", size=16, weight=ft.FontWeight.BOLD),
+                                ft.Text("Event Log", size=24, weight=ft.FontWeight.BOLD),
                                 ft.Container(height=8),
-                                ft.Text("Browse historical incidents", size=12),
-                            ], alignment=ft.MainAxisAlignment.CENTER),
+                                ft.Text("Browse reports and system event information", size=20),
+                            ], alignment=ft.MainAxisAlignment.CENTER,horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                             margin=10,
                             padding=10,
                             alignment=ft.alignment.center,
                             bgcolor=ft.Colors.GREEN_50,
-                            width=240,
-                            height=140,
+                            width=440,
+                            height=340,
                             border_radius=10,
                             ink=True,
                             on_click=lambda e: page.go("/logs"),
@@ -256,15 +256,15 @@ def main(page: ft.Page):
         return ft.View(
             "/logs",
             controls=[
-                app_bar("Logged Incidents", leading=ft.TextButton("Back", on_click=lambda e: page.go("/"))),
+                app_bar("Logged Events", leading=ft.TextButton("Back", on_click=lambda e: page.go("/"))),
                 ft.Container(
                     padding=20,
                     expand=True,
                     content=ft.Column([
-                        ft.Text("Incident History", size=18, weight=ft.FontWeight.BOLD),
+                        ft.Text("Event History", size=18, weight=ft.FontWeight.BOLD),
                         ft.Container(height=12),
                         incident_list_column,
-                    ]),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 ),
             ],
         )
@@ -281,12 +281,54 @@ def main(page: ft.Page):
             message.color = color
             page.update()
 
+        def _friendly_error_message(exc: Exception) -> str:
+            """Turn auth exceptions into user-friendly messages.
+
+            The `auth` helpers raise `RuntimeError` with strings like
+            "Firebase error: EMAIL_NOT_FOUND" or
+            "Firebase error: WEAK_PASSWORD : Password should be at least 6 characters".
+            Map common codes to clearer text for users and fall back to a generic
+            explanation for network/other errors.
+            """
+            msg = str(exc or "")
+            # explicit missing key
+            if "Missing Firebase API key" in msg:
+                return "Internal configuration error: missing Firebase API key."
+            # firebase REST errors are prefixed
+            if msg.startswith("Firebase error:"):
+                raw = msg.split(":", 1)[1].strip()
+                # common Firebase error codes -> friendly messages
+                mapping = {
+                    "INVALID_LOGIN_CREDENTIALS": "Invalid email or password.",
+                    "EMAIL_NOT_FOUND": "No account found with that email.",
+                    "INVALID_PASSWORD": "Incorrect password. Please try again.",
+                    "USER_DISABLED": "This account has been disabled.",
+                    "EMAIL_EXISTS": "An account with that email already exists.",
+                    "WEAK_PASSWORD": "Password is too weak. Use at least 6 characters.",
+                    "OPERATION_NOT_ALLOWED": "This operation is not allowed.",
+                    "TOO_MANY_ATTEMPTS_TRY_LATER": "Too many attempts. Try again later.",
+                }
+                # If the raw value contains a known code, return mapping
+                for code, friendly in mapping.items():
+                    if code in raw:
+                        return friendly
+                # If there's a colon-separated detail, attempt to show it nicely
+                if ":" in raw:
+                    code, detail = [p.strip() for p in raw.split(":", 1)]
+                    return f"{code}: {detail}"
+                # fallback: return the raw message
+                return raw
+            if msg.startswith("Network error:"):
+                return "Network error: could not reach authentication service. Check your connection."
+            # final fallback: return the original text
+            return msg
+
         def on_sign_in(e):
             key = api_key_field.value.strip()
             email_val = email.value.strip()
             pw_val = password.value
             if not (key and email_val and pw_val):
-                set_message("Please provide API key, email and password.")
+                set_message("Please provide email and password.")
                 return
             try:
                 resp = firebase_auth.sign_in_with_email_and_password(key, email_val, pw_val)
@@ -303,15 +345,15 @@ def main(page: ft.Page):
                 indicent_type = 'User Login'
                 summary = f"User {state['user_email']} signed in."
                 new_card = ft.Card(content=ft.Container(padding=12, content=ft.Column([
-                        ft.Text(time_log, size=12, color=ft.Colors.GREY_600),
-                        ft.Text(indicent_type, size=14, weight=ft.FontWeight.BOLD),
-                        ft.Text(summary, size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text(time_log, size=16, color=ft.Colors.GREY_600),
+                        ft.Text(indicent_type, size=22, weight=ft.FontWeight.BOLD),
+                        ft.Text(summary, size=16),
                     ])))
                 incident_list_column.controls.insert(0, new_card)
                 page.update()
                 page.go("/")
             except Exception as exc:
-                set_message(str(exc))
+                set_message(_friendly_error_message(exc))
 
         def on_sign_up(e):
             key = api_key_field.value.strip()
@@ -330,7 +372,7 @@ def main(page: ft.Page):
                 set_message("Account created and signed in.", color=ft.Colors.GREEN)
                 page.go("/")
             except Exception as exc:
-                set_message(str(exc))
+                set_message(_friendly_error_message(exc))
 
         return ft.View(
             "/login",
